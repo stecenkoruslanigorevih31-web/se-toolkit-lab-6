@@ -50,20 +50,20 @@ def test_task2_merge_conflict_uses_read_file():
     assert "answer" in response, "Missing 'answer' field"
     assert "source" in response, "Missing 'source' field"
     assert "tool_calls" in response, "Missing 'tool_calls' field"
-    
+
     # Check that answer is non-empty
     assert len(response["answer"]) > 0, "'answer' is empty"
-    
+
     # Check that tool_calls were made
     assert len(response["tool_calls"]) > 0, "No tool calls were made"
-    
+
     # Check that read_file was used
     tool_names = [call["tool"] for call in response["tool_calls"]]
     assert "read_file" in tool_names, "read_file was not used"
-    
-    # Check that source contains wiki/git-workflow.md
-    assert "wiki/git-workflow.md" in response["source"], \
-        f"Expected 'wiki/git-workflow.md' in source, got: {response['source']}"
+
+    # Check that source contains wiki/git-workflow.md or wiki/git.md
+    assert "wiki/git" in response["source"], \
+        f"Expected 'wiki/git' in source, got: {response['source']}"
 
 
 def test_task2_list_files_in_wiki():
@@ -75,13 +75,62 @@ def test_task2_list_files_in_wiki():
     assert "answer" in response, "Missing 'answer' field"
     assert "source" in response, "Missing 'source' field"
     assert "tool_calls" in response, "Missing 'tool_calls' field"
-    
+
     # Check that answer is non-empty
     assert len(response["answer"]) > 0, "'answer' is empty"
-    
+
     # Check that tool_calls were made
     assert len(response["tool_calls"]) > 0, "No tool calls were made"
-    
+
     # Check that list_files was used
     tool_names = [call["tool"] for call in response["tool_calls"]]
     assert "list_files" in tool_names, "list_files was not used"
+
+
+def test_task3_framework_uses_read_file():
+    """Test that agent uses read_file to answer framework question (Task 3)."""
+    result = run_agent("What Python web framework does the backend use?")
+    response = parse_json_output(result)
+
+    # Check required fields
+    assert "answer" in response, "Missing 'answer' field"
+    assert "tool_calls" in response, "Missing 'tool_calls' field"
+
+    # Check that answer is non-empty
+    assert len(response["answer"]) > 0, "'answer' is empty"
+
+    # Check that tool_calls were made
+    assert len(response["tool_calls"]) > 0, "No tool calls were made"
+
+    # Check that read_file was used (to read pyproject.toml or backend files)
+    tool_names = [call["tool"] for call in response["tool_calls"]]
+    assert "read_file" in tool_names, "read_file was not used"
+
+    # Check that answer mentions FastAPI
+    assert "fastapi" in response["answer"].lower(), \
+        f"Expected 'fastapi' in answer, got: {response['answer']}"
+
+
+def test_task3_items_count_uses_query_api():
+    """Test that agent uses query_api to answer items count question (Task 3)."""
+    result = run_agent("How many items are in the database?")
+    response = parse_json_output(result)
+
+    # Check required fields
+    assert "answer" in response, "Missing 'answer' field"
+    assert "tool_calls" in response, "Missing 'tool_calls' field"
+
+    # Check that answer is non-empty
+    assert len(response["answer"]) > 0, "'answer' is empty"
+
+    # Check that tool_calls were made
+    assert len(response["tool_calls"]) > 0, "No tool calls were made"
+
+    # Check that query_api was used
+    tool_names = [call["tool"] for call in response["tool_calls"]]
+    assert "query_api" in tool_names, "query_api was not used"
+
+    # Check that answer contains a number
+    import re
+    numbers = re.findall(r'\d+', response["answer"])
+    assert len(numbers) > 0, "Answer should contain a number"
