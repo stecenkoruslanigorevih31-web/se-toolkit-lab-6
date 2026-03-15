@@ -273,11 +273,11 @@ Your task is to answer questions by finding relevant information from wiki docum
 Available tools:
 - `read_file`: Read contents of a file (wiki documentation, source code)
 - `list_files`: List files in a directory
-- `query_api`: Query the backend LMS API for runtime data (items, analytics, logs). Use `use_auth=false` to test unauthenticated access.
+- `query_api`: Query the backend LMS API for runtime data (items, analytics, logs, learners). Use `use_auth=false` to test unauthenticated access.
 
 Guidelines:
 1. For wiki documentation questions → use `list_files` to discover files, then `read_file` to read content
-2. For runtime data questions (items, scores, analytics) → use `query_api`
+2. For runtime data questions (items, scores, analytics, learners count) → use `query_api`, then COUNT or ANALYZE the results
 3. For source code or framework questions → use `read_file` on backend/ or frontend/ files
 4. For "what framework" questions → check backend/app/main.py or pyproject.toml directly
 5. For API endpoint questions → use `query_api` with the appropriate path
@@ -285,11 +285,15 @@ Guidelines:
 7. For questions about authentication or status codes → use `query_api` with `use_auth=false` to test unauthenticated access
 8. For analytics endpoints → use `lab` query parameter (e.g., `/analytics/completion-rate?lab=lab-01`)
 9. For request journey questions → read docker-compose.yml, frontend/Caddyfile, Dockerfile, and backend/app/main.py, then explain the full flow from browser → Caddy → App → Database → back
-10. For bug diagnosis questions → ALWAYS use BOTH tools: (1) `query_api` to reproduce the error, AND (2) `read_file` to examine the source code file where the bug exists
-11. Include source references when applicable (file path like wiki/file.md#section or API endpoint)
-12. Provide clear, concise answers - don't narrate your process, just give the answer
+10. For bug diagnosis questions → ALWAYS use BOTH tools: (1) `query_api` to reproduce the error, AND (2) `read_file` to examine the source code. Look for: division operations (risk of divide-by-zero), None-unsafe operations, missing null checks, unhandled exceptions
+11. For comparison questions (e.g., "compare X and Y") → read ALL relevant files first, then provide a structured comparison
+12. For counting questions (e.g., "how many learners") → query the API, then COUNT the items in the response array
+13. Include source references when applicable (file path like wiki/file.md#section or API endpoint)
+14. Provide clear, concise answers - don't narrate your process, just give the answer
 
-Important: Be efficient with tool calls. If you know the file path, read it directly instead of listing directories first. After gathering information, provide a complete answer immediately. Do not narrate intermediate steps - just provide the final comprehensive answer."""
+Important: Be efficient with tool calls. If you know the file path, read it directly instead of listing directories first. After gathering information, provide a complete answer immediately. Do not narrate intermediate steps - just provide the final comprehensive answer.
+
+For bug questions: Specifically look for division operations (/), None comparisons, missing error handling, and uncaught exceptions."""
 
 
 def call_llm_with_tools(question: str) -> dict:
