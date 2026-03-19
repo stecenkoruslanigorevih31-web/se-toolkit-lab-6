@@ -16,9 +16,9 @@ MAX_TOOL_CALLS = 10
 # Question-specific hints to prepend to the prompt
 QUESTION_HINTS = {
     r"dockerfile.*technique.*final image": "HINT: Look for multiple FROM statements - this is called a multi-stage build.",
-    r"how many.*learners": "HINT: Query /learners/ endpoint and count the number of items in the response array.",
-    r"analytics.*bug|risky.*operation": "HINT: Look for division operations (/) and None comparisons in analytics.py. Check for divide-by-zero risks.",
-    r"compare.*ETL.*API|error handling.*strategy": "HINT: Read both backend/app/etl.py and backend/app/routers/*.py. Compare try/except blocks and error patterns.",
+    r"how many.*learners|distinct.*learners": "HINT: Query GET /learners/ endpoint and count the number of items in the response array.",
+    r"analytics.*bug|risky.*operation|division|zero": "HINT: Read backend/app/routers/analytics.py. Look for division operations like 'passed_learners / total_learners' without checking if denominator is zero. Also look for None comparisons.",
+    r"compare.*ETL.*API|error handling.*strategy|ETL.*failures": "HINT: Read BOTH backend/app/etl.py AND backend/app/routers/*.py. Compare: ETL uses try/except blocks, API uses exception handlers. Note the differences.",
     r"clean.*docker": "HINT: Search the wiki for docker cleanup commands like 'docker compose down -v'.",
 }
 
@@ -284,24 +284,26 @@ def execute_tool(tool_name: str, args: dict) -> str:
         return f"Error: Unknown tool: {tool_name}"
 
 
-SYSTEM_PROMPT = """You are a documentation and system assistant for a software engineering lab.
+SYSTEM_PROMPT = """You are a documentation and system assistant.
 
-Available tools:
-- `read_file`: Read file contents (wiki, source code)
-- `list_files`: List directory contents  
-- `query_api`: Query backend API (items, learners, analytics). Use `use_auth=false` for unauthenticated testing.
+Tools: read_file, list_files, query_api
 
 Rules:
-1. Use `read_file` for source code and wiki questions
-2. Use `query_api` for runtime data (items, learners, scores)
-3. For bug questions: ALWAYS use BOTH `query_api` (reproduce error) AND `read_file` (examine code)
-4. For comparison questions: Read ALL relevant files first, then compare
-5. For counting questions: Query API, then COUNT items in response
-6. Look for: division operations (/), None comparisons, missing error handling
-7. Be efficient - read files directly if you know the path
-8. Provide complete answers immediately - don't narrate steps
+1. read_file for source/wiki questions
+2. query_api for runtime data (items, learners, scores)
+3. Bug questions: ALWAYS use BOTH query_api (reproduce) AND read_file (examine code)
+4. Comparison questions: Read ALL files first (etl.py AND routers/*.py), then compare
+5. Counting questions: Query API, then COUNT items in response
+6. Look for: division (/) without zero check, None comparisons, missing try/except
+7. Be efficient - read files directly if you know path
+8. Complete answers only - no narration
 
-Include source references when applicable."""
+Specific patterns:
+- Analytics bugs: Check for 'x / y' without 'if y == 0' check
+- ETL vs API: ETL uses try/except, API uses @exception_handler
+- Dockerfile: Multiple FROM = multi-stage build
+
+Include source references."""
 
 
 def call_llm_with_tools(question: str) -> dict:
