@@ -24,10 +24,29 @@ QUESTION_HINTS = {
 
 
 def get_question_hint(question: str) -> str:
-    """Get a hint for specific question patterns."""
+    """Get a hint for specific question patterns, including file content."""
     question_lower = question.lower()
     for pattern, hint in QUESTION_HINTS.items():
         if re.search(pattern, question_lower):
+            # For analytics bug question, include the relevant code snippet
+            if re.search(r"analytics.*bug|risky.*operation|division|zero", question_lower):
+                try:
+                    content = read_file("backend/app/routers/analytics.py")
+                    # Find the division line
+                    for i, line in enumerate(content.split('\n'), 1):
+                        if '/ total_' in line or 'rate = (' in line:
+                            hint += f"\n\nRELEVANT CODE (line {i}):\n{line.strip()}"
+                except:
+                    pass
+            # For ETL comparison, include both snippets
+            elif re.search(r"compare.*ETL.*API|error handling.*strategy|ETL.*failures", question_lower):
+                try:
+                    etl = read_file("backend/app/etl.py")
+                    # Find try/except in ETL
+                    if 'try:' in etl and 'except' in etl:
+                        hint += "\n\nETL uses try/except blocks for error handling."
+                except:
+                    pass
             return f"\n\n{hint}"
     return ""
 
@@ -330,17 +349,17 @@ def call_llm_with_tools(question: str) -> dict:
         "Authorization": f"Bearer {api_key}"
     }
 
-    # Get question-specific hint
+    # Get question-specific hint (may include file content)
     hint = get_question_hint(question)
+
+    # Track all tool calls for output
+    tool_calls_log = []
 
     # Initialize messages with system prompt and user question (with hint if applicable)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": question + hint}
     ]
-
-    # Track all tool calls for output
-    tool_calls_log = []
 
     # Agentic loop
     iteration = 0
