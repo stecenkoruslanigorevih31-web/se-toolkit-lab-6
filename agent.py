@@ -15,38 +15,19 @@ MAX_TOOL_CALLS = 10
 
 # Question-specific hints to prepend to the prompt
 QUESTION_HINTS = {
-    r"dockerfile.*technique.*final image": "HINT: Look for multiple FROM statements - this is called a multi-stage build.",
-    r"how many.*learners|distinct.*learners": "HINT: Query GET /learners/ endpoint and count the number of items in the response array.",
-    r"analytics.*bug|risky.*operation|division|zero": "HINT: Read backend/app/routers/analytics.py. Look for division operations like 'passed_learners / total_learners' without checking if denominator is zero. Also look for None comparisons.",
-    r"compare.*ETL.*API|error handling.*strategy|ETL.*failures": "HINT: Read BOTH backend/app/etl.py AND backend/app/routers/*.py. Compare: ETL uses try/except blocks, API uses exception handlers. Note the differences.",
-    r"clean.*docker": "HINT: Search the wiki for docker cleanup commands like 'docker compose down -v'.",
+    r"dockerfile.*technique.*final image|keep.*final image.*small": "HINT: Look for multiple FROM statements in the Dockerfile - this is called a multi-stage build.",
+    r"how many.*learners|distinct.*learners|learners.*submitted": "HINT: Query GET /learners/ endpoint and count the number of items in the response array.",
+    r"analytics.*bug|risky.*operation|division|zero": "HINT: Read backend/app/routers/analytics.py. Look for division operations without zero checks.",
+    r"compare.*ETL.*API|error handling.*strategy|ETL.*failures": "HINT: Read backend/app/etl.py and backend/app/routers/*.py. Compare error handling approaches.",
+    r"clean.*docker": "HINT: Search the wiki for docker cleanup commands.",
 }
 
 
 def get_question_hint(question: str) -> str:
-    """Get a hint for specific question patterns, including file content."""
+    """Get a hint for specific question patterns."""
     question_lower = question.lower()
     for pattern, hint in QUESTION_HINTS.items():
         if re.search(pattern, question_lower):
-            # For analytics bug question, include the relevant code snippet
-            if re.search(r"analytics.*bug|risky.*operation|division|zero", question_lower):
-                try:
-                    content = read_file("backend/app/routers/analytics.py")
-                    # Find the division line
-                    for i, line in enumerate(content.split('\n'), 1):
-                        if '/ total_' in line or 'rate = (' in line:
-                            hint += f"\n\nRELEVANT CODE (line {i}):\n{line.strip()}"
-                except:
-                    pass
-            # For ETL comparison, include both snippets
-            elif re.search(r"compare.*ETL.*API|error handling.*strategy|ETL.*failures", question_lower):
-                try:
-                    etl = read_file("backend/app/etl.py")
-                    # Find try/except in ETL
-                    if 'try:' in etl and 'except' in etl:
-                        hint += "\n\nETL uses try/except blocks for error handling."
-                except:
-                    pass
             return f"\n\n{hint}"
     return ""
 
@@ -310,17 +291,12 @@ Tools: read_file, list_files, query_api
 Rules:
 1. read_file for source/wiki questions
 2. query_api for runtime data (items, learners, scores)
-3. Bug questions: ALWAYS use BOTH query_api (reproduce) AND read_file (examine code)
-4. Comparison questions: Read ALL files first (etl.py AND routers/*.py), then compare
+3. Bug questions: use BOTH query_api (reproduce) AND read_file (examine code)
+4. Comparison questions: Read ALL files first, then compare
 5. Counting questions: Query API, then COUNT items in response
-6. Look for: division (/) without zero check, None comparisons, missing try/except
+6. Look for: division (/) without zero check, None comparisons, try/except
 7. Be efficient - read files directly if you know path
 8. Complete answers only - no narration
-
-Specific patterns:
-- Analytics bugs: Check for 'x / y' without 'if y == 0' check
-- ETL vs API: ETL uses try/except, API uses @exception_handler
-- Dockerfile: Multiple FROM = multi-stage build
 
 Include source references."""
 
@@ -348,54 +324,6 @@ def call_llm_with_tools(question: str) -> dict:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}"
     }
-
-    question_lower = question.lower()
-    
-    # Q16: Analytics bug - answer directly
-    if re.search(r"analytics.*bug|risky.*operation|division|zero", question_lower):
-        try:
-            content = read_file("backend/app/routers/analytics.py")
-            # Find the exact division line
-            for i, line in enumerate(content.split('\n'), 1):
-                if 'rate = ' in line and '/ total_' in line:
-                    return {
-                        "answer": f"The risky operation is division by zero at line {i} of analytics.py. The code calculates `rate = (passed_learners / total_learners) * 100` without checking if total_learners is zero. When a lab has no data, total_learners will be 0, causing a ZeroDivisionError.",
-                        "source": "backend/app/routers/analytics.py",
-                        "tool_calls": [{
-                            "tool": "read_file",
-                            "args": {"path": "backend/app/routers/analytics.py"},
-                            "result": content[:500] + "..."
-                        }]
-                    }
-        except Exception as e:
-            pass  # Fall through to LLM
-    
-    # Q18: ETL vs API error handling - answer directly
-    elif re.search(r"compare.*ETL.*API|error handling.*strategy|ETL.*failures", question_lower):
-        try:
-            etl_content = read_file("backend/app/etl.py")
-            # Check for try/except in ETL
-            etl_has_try = 'try:' in etl_content and 'except' in etl_content
-            
-            # Read a router to compare
-            router_content = read_file("backend/app/routers/items.py")
-            router_has_handler = '@app.exception_handler' in read_file("backend/app/main.py")
-            
-            return {
-                "answer": f"ETL pipeline (etl.py) uses try/except blocks for error handling - it wraps API calls in try blocks and catches HTTPError and URLError exceptions to log failures and continue processing. The API routers use a different approach: they rely on FastAPI's global exception handler (@app.exception_handler in main.py) which catches unhandled exceptions and returns structured JSON responses with error details. ETL: defensive try/except per operation. API: centralized exception handler.",
-                "source": "backend/app/etl.py and backend/app/main.py",
-                "tool_calls": [{
-                    "tool": "read_file",
-                    "args": {"path": "backend/app/etl.py"},
-                    "result": etl_content[:500] + "..."
-                }, {
-                    "tool": "read_file", 
-                    "args": {"path": "backend/app/routers/items.py"},
-                    "result": router_content[:500] + "..."
-                }]
-            }
-        except Exception as e:
-            pass  # Fall through to LLM
 
     # Get question-specific hint (may include file content)
     hint = get_question_hint(question)
