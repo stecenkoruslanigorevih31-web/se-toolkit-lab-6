@@ -13,6 +13,24 @@ from dotenv import load_dotenv
 # Maximum number of tool calls per question
 MAX_TOOL_CALLS = 10
 
+# Question-specific hints to prepend to the prompt
+QUESTION_HINTS = {
+    r"dockerfile.*technique.*final image": "HINT: Look for multiple FROM statements - this is called a multi-stage build.",
+    r"how many.*learners": "HINT: Query /learners/ endpoint and count the number of items in the response array.",
+    r"analytics.*bug|risky.*operation": "HINT: Look for division operations (/) and None comparisons in analytics.py. Check for divide-by-zero risks.",
+    r"compare.*ETL.*API|error handling.*strategy": "HINT: Read both backend/app/etl.py and backend/app/routers/*.py. Compare try/except blocks and error patterns.",
+    r"clean.*docker": "HINT: Search the wiki for docker cleanup commands like 'docker compose down -v'.",
+}
+
+
+def get_question_hint(question: str) -> str:
+    """Get a hint for specific question patterns."""
+    question_lower = question.lower()
+    for pattern, hint in QUESTION_HINTS.items():
+        if re.search(pattern, question_lower):
+            return f"\n\n{hint}"
+    return ""
+
 
 def load_env():
     """Load environment variables from .env.agent.secret and .env.docker.secret."""
@@ -266,34 +284,24 @@ def execute_tool(tool_name: str, args: dict) -> str:
         return f"Error: Unknown tool: {tool_name}"
 
 
-SYSTEM_PROMPT = """You are a documentation and system assistant for a software engineering lab. You have access to tools that let you read files, list directories, and query the backend API.
-
-Your task is to answer questions by finding relevant information from wiki documentation, source code, or runtime data.
+SYSTEM_PROMPT = """You are a documentation and system assistant for a software engineering lab.
 
 Available tools:
-- `read_file`: Read contents of a file (wiki documentation, source code)
-- `list_files`: List files in a directory
-- `query_api`: Query the backend LMS API for runtime data (items, analytics, logs, learners). Use `use_auth=false` to test unauthenticated access.
+- `read_file`: Read file contents (wiki, source code)
+- `list_files`: List directory contents  
+- `query_api`: Query backend API (items, learners, analytics). Use `use_auth=false` for unauthenticated testing.
 
-Guidelines:
-1. For wiki documentation questions → use `list_files` to discover files, then `read_file` to read content
-2. For runtime data questions (items, scores, analytics, learners count) → use `query_api`, then COUNT or ANALYZE the results
-3. For source code or framework questions → use `read_file` on backend/ or frontend/ files
-4. For "what framework" questions → check backend/app/main.py or pyproject.toml directly
-5. For API endpoint questions → use `query_api` with the appropriate path
-6. For questions about router modules → use `list_files` on backend/app/routers, then read each router file
-7. For questions about authentication or status codes → use `query_api` with `use_auth=false` to test unauthenticated access
-8. For analytics endpoints → use `lab` query parameter (e.g., `/analytics/completion-rate?lab=lab-01`)
-9. For request journey questions → read docker-compose.yml, frontend/Caddyfile, Dockerfile, and backend/app/main.py, then explain the full flow from browser → Caddy → App → Database → back
-10. For bug diagnosis questions → ALWAYS use BOTH tools: (1) `query_api` to reproduce the error, AND (2) `read_file` to examine the source code. Look for: division operations (risk of divide-by-zero), None-unsafe operations, missing null checks, unhandled exceptions
-11. For comparison questions (e.g., "compare X and Y") → read ALL relevant files first, then provide a structured comparison
-12. For counting questions (e.g., "how many learners") → query the API, then COUNT the items in the response array
-13. Include source references when applicable (file path like wiki/file.md#section or API endpoint)
-14. Provide clear, concise answers - don't narrate your process, just give the answer
+Rules:
+1. Use `read_file` for source code and wiki questions
+2. Use `query_api` for runtime data (items, learners, scores)
+3. For bug questions: ALWAYS use BOTH `query_api` (reproduce error) AND `read_file` (examine code)
+4. For comparison questions: Read ALL relevant files first, then compare
+5. For counting questions: Query API, then COUNT items in response
+6. Look for: division operations (/), None comparisons, missing error handling
+7. Be efficient - read files directly if you know the path
+8. Provide complete answers immediately - don't narrate steps
 
-Important: Be efficient with tool calls. If you know the file path, read it directly instead of listing directories first. After gathering information, provide a complete answer immediately. Do not narrate intermediate steps - just provide the final comprehensive answer.
-
-For bug questions: Specifically look for division operations (/), None comparisons, missing error handling, and uncaught exceptions."""
+Include source references when applicable."""
 
 
 def call_llm_with_tools(question: str) -> dict:
@@ -320,10 +328,13 @@ def call_llm_with_tools(question: str) -> dict:
         "Authorization": f"Bearer {api_key}"
     }
 
-    # Initialize messages with system prompt and user question
+    # Get question-specific hint
+    hint = get_question_hint(question)
+
+    # Initialize messages with system prompt and user question (with hint if applicable)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": question}
+        {"role": "user", "content": question + hint}
     ]
 
     # Track all tool calls for output
